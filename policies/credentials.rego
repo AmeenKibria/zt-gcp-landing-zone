@@ -56,11 +56,33 @@ deny contains msg if {
   msg := sprintf("[design] credentials: %v sets no attribute_condition; every identity the issuer signs for can exchange a token here", [change.address])
 }
 
+# The scope of this binding is carried in the member string, and the member
+# string is not always knowable when the plan is made.
+#
+# A principalSet that interpolates the name of a pool created in the same plan
+# depends on the project number, which is a server-side value. Terraform does
+# not guess it. It omits `member` from `after` altogether and records
+# member: true under `after_unknown`. A rule that reads the value therefore
+# matches nothing and says nothing, and it says nothing about the single most
+# dangerous misconfiguration in the chain.
+#
+# Both cases are handled below, and they are mutually exclusive. A known member
+# is checked. An unknown member is denied on its own terms, because a scope that
+# cannot be verified here has not been verified anywhere.
+
 deny contains msg if {
   some change in input.resource_changes
   change.type == "google_service_account_iam_member"
   change.change.after.role == "roles/iam.workloadIdentityUser"
-  member := change.change.after.member
+  member := object.get(change.change.after, "member", "")
   endswith(member, "/*")
   msg := sprintf("[design] credentials: %v grants impersonation to an entire identity pool; scope the principalSet to one repository", [member])
+}
+
+deny contains msg if {
+  some change in input.resource_changes
+  change.type == "google_service_account_iam_member"
+  change.change.after.role == "roles/iam.workloadIdentityUser"
+  object.get(change.change, ["after_unknown", "member"], false) == true
+  msg := sprintf("[design] credentials: %v grants workloadIdentityUser to a principalSet that is not known at plan time; its scope cannot be verified here", [change.address])
 }
