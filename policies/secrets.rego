@@ -1,5 +1,16 @@
 package landingzone.secrets
 
+# MESSAGE CONVENTION
+# A denial names the control it enforces and the security area it belongs to.
+# It does not name a threat scenario. Rules are global: every rule is evaluated
+# against every resource in whatever plan the pipeline is given, so a rule
+# written with one scenario in mind fires wherever the condition holds. Tagging
+# a rule with a scenario identifier asserts an ownership that does not exist.
+# The scenario-to-rule mapping belongs in the evaluation, not in the policy.
+#
+# [design] marks a requirement of this landing zone that the CIS benchmark does
+# not state. Those are deliberate additions, not gaps in the citation.
+
 # Zero Trust tenets 3 and 6 (Rose et al., 2020, pp. 6-7).
 # CIS GCP Foundation Benchmark v5.0.0: 1.11, 1.12, 1.18.
 #
@@ -36,7 +47,7 @@ deny contains msg if {
 	some change in input.resource_changes
 	change.type == "google_secret_manager_secret_version"
 	is_string(object.get(change.change.after, "secret_data", null))
-	msg := sprintf("ts-06 [CIS 1.18]: %v carries a literal secret value in the configuration", [change.address])
+	msg := sprintf("[CIS 1.18] secrets: %v carries a literal secret value in the configuration", [change.address])
 }
 
 deny contains msg if {
@@ -44,7 +55,7 @@ deny contains msg if {
 	change.type == "google_secret_manager_secret_version"
 	object.get(change.change.after, "secret_data", null) == null
 	object.get(change.change, ["after_unknown", "secret_data"], false) == false
-	msg := sprintf("ts-06 [CIS 1.18]: %v sets a secret value already known at plan time; it comes from the configuration", [change.address])
+	msg := sprintf("[CIS 1.18] secrets: %v sets a secret value already known at plan time; it comes from the configuration", [change.address])
 }
 
 # CIS 1.11 - KMS keys must rotate within 90 days.
@@ -52,7 +63,7 @@ deny contains msg if {
 	some change in input.resource_changes
 	change.type == "google_kms_crypto_key"
 	object.get(change.change.after, "rotation_period", null) == null
-	msg := sprintf("ts-06 [CIS 1.11]: crypto key %v sets no rotation_period", [change.change.after.name])
+	msg := sprintf("[CIS 1.11] secrets: crypto key %v sets no rotation_period", [change.change.after.name])
 }
 
 deny contains msg if {
@@ -62,7 +73,7 @@ deny contains msg if {
 	period != null
 	seconds := to_number(trim_suffix(period, "s"))
 	seconds > max_rotation_seconds
-	msg := sprintf("ts-06 [CIS 1.11]: crypto key %v rotates every %vs, beyond the %vs maximum", [change.change.after.name, seconds, max_rotation_seconds])
+	msg := sprintf("[CIS 1.11] secrets: crypto key %v rotates every %vs, beyond the %vs maximum", [change.change.after.name, seconds, max_rotation_seconds])
 }
 
 # Data-holding buckets must use a customer-managed key.
@@ -70,7 +81,7 @@ deny contains msg if {
 	some change in input.resource_changes
 	change.type == "google_storage_bucket"
 	count(object.get(change.change.after, "encryption", [])) == 0
-	msg := sprintf("ts-06: bucket %v sets no customer-managed encryption key", [change.change.after.name])
+	msg := sprintf("[design] secrets: bucket %v sets no customer-managed encryption key", [change.change.after.name])
 }
 
 # CIS 1.12 - separation of duties on KMS roles.
@@ -91,5 +102,5 @@ decrypters contains member if {
 deny contains msg if {
 	some member in storage_readers
 	decrypters[member]
-	msg := sprintf("ts-06 [CIS 1.12]: %v holds both object read and key decrypt; encryption gives no separation", [member])
+	msg := sprintf("[CIS 1.12] secrets: %v holds both object read and key decrypt; encryption gives no separation", [member])
 }
