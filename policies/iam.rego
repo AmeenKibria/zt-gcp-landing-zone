@@ -47,11 +47,30 @@ deny contains msg if {
   msg := sprintf("[design] iam: roles/viewer granted to %v; its scope is unbounded, use roles/browser or a bounded predefined role", [change.change.after.member])
 }
 
-# CIS 1.7 - Service Account User / Token Creator must not be held at project level.
+# CIS 1.7 - Service Account User and Token Creator must not be held at project
+# level. A project-level grant confers impersonation over every service account
+# in the project, present and future, which is what the benchmark prohibits.
+deny contains msg if {
+  some change in input.resource_changes
+  change.type == "google_project_iam_member"
+  impersonation_roles[change.change.after.role]
+  startswith(change.change.after.member, "user:")
+  msg := sprintf("[CIS 1.7] iam: %v granted at project level to %v; it confers impersonation over every service account in the project", [change.change.after.role, change.change.after.member])
+}
+
+# Beyond the benchmark. A grant scoped to one service account is outside CIS 1.7,
+# which addresses project-level grants only. This landing zone denies it to human
+# principals anyway: a person who can act as a service account has a path to
+# change infrastructure that does not pass through the pipeline, which is the
+# escalation the design exists to remove.
+#
+# The same grant to a service account is deliberately NOT denied. The pipeline
+# impersonates a task-scoped service account for each job, and that chain is the
+# mechanism by which least privilege is applied per job rather than per pipeline.
 deny contains msg if {
   some change in input.resource_changes
   change.type == "google_service_account_iam_member"
   impersonation_roles[change.change.after.role]
   startswith(change.change.after.member, "user:")
-  msg := sprintf("[CIS 1.7] iam: %v grants impersonation to human principal %v", [change.change.after.role, change.change.after.member])
+  msg := sprintf("[design] iam: %v grants impersonation to human principal %v; humans have no path to act as automation", [change.change.after.role, change.change.after.member])
 }
