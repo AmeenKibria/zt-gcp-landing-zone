@@ -6,6 +6,10 @@ package landingzone.storage
 
 public_principals := {"allUsers", "allAuthenticatedUsers"}
 
+# An optional attribute the configuration omits arrives as null, not as an
+# absent key, and Rego treats null as truthy. Absence is therefore tested with
+# object.get and an explicit comparison, never with a bare `not`.
+
 # CIS 5.1 - buckets must not be anonymously or publicly accessible.
 deny contains msg if {
   some change in input.resource_changes
@@ -17,7 +21,7 @@ deny contains msg if {
 deny contains msg if {
   some change in input.resource_changes
   change.type == "google_storage_bucket"
-  change.change.after.public_access_prevention != "enforced"
+  object.get(change.change.after, "public_access_prevention", "") != "enforced"
   msg := sprintf("ts-03 [CIS 5.1]: bucket %v does not set public_access_prevention = enforced", [change.change.after.name])
 }
 
@@ -25,6 +29,6 @@ deny contains msg if {
 deny contains msg if {
   some change in input.resource_changes
   change.type == "google_storage_bucket"
-  not change.change.after.uniform_bucket_level_access
+  object.get(change.change.after, "uniform_bucket_level_access", false) != true
   msg := sprintf("ts-03 [CIS 5.2]: bucket %v does not enable uniform_bucket_level_access", [change.change.after.name])
 }

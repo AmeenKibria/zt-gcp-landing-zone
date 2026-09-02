@@ -8,7 +8,9 @@ package landingzone.credentials
 deny contains msg if {
   some change in input.resource_changes
   change.type == "google_service_account_key"
-  msg := sprintf("ts-02 [CIS 1.5]: user-managed key created for %v; use identity federation", [change.change.after.service_account_id])
+  # service_account_id references another resource, so it is unknown at plan
+  # time. The address identifies the offending resource without it.
+  msg := sprintf("ts-02 [CIS 1.5]: %v creates a user-managed service account key; use identity federation", [change.address])
 }
 
 # Do not let the guardrail itself be switched off.
