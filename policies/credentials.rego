@@ -28,7 +28,13 @@ deny contains msg if {
 deny contains msg if {
   some change in input.resource_changes
   change.type == "google_org_policy_policy"
-  contains(change.change.after.name, "iam.disableServiceAccountKeyCreation")
+  # Google publishes two generations of constraint identifier for the same
+  # control: the legacy "iam.disableServiceAccountKeyCreation" and the newer
+  # managed "iam.managed.disableServiceAccountKeyCreation". Matching the full
+  # legacy string would miss the managed one entirely, so only the distinctive
+  # suffix is matched. A rule that hard-codes a vendor identifier inherits the
+  # vendor's renaming schedule.
+  contains(change.change.after.name, "disableServiceAccountKeyCreation")
   some rule in change.change.after.spec.rules
   rule.enforce == "FALSE"
   msg := "[CIS 1.5] credentials: constraint iam.disableServiceAccountKeyCreation is being turned off"

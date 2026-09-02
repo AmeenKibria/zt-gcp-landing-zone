@@ -12,7 +12,7 @@ package landingzone.secrets
 # not state. Those are deliberate additions, not gaps in the citation.
 
 # Zero Trust tenets 3 and 6 (Rose et al., 2020, pp. 6-7).
-# CIS GCP Foundation Benchmark v5.0.0: 1.11, 1.12, 1.18.
+# CIS GCP Foundation Benchmark v5.0.0: 1.11, 1.12. See the note on 1.18 below.
 #
 # The separation rule below encodes a documented failure: at Capital One the
 # data was encrypted, but the compromised role also held decrypt, so encryption
@@ -28,7 +28,11 @@ package landingzone.secrets
 
 max_rotation_seconds := 7776000        # 90 days
 
-# CIS 1.18 - secrets belong in Secret Manager, not in configuration.
+# Beyond the benchmark. CIS 1.18 is the nearest statement of this principle,
+# but it is Manual and it addresses secrets in Cloud Functions environment
+# variables specifically. It cannot anchor an automated rule about literals in
+# a Terraform configuration, so these are design rules informed by 1.18 rather
+# than implementations of it.
 #
 # secret_data is marked sensitive in the provider schema, and how a sensitive
 # attribute appears in `terraform show -json` decides which test can see it.
@@ -47,7 +51,7 @@ deny contains msg if {
 	some change in input.resource_changes
 	change.type == "google_secret_manager_secret_version"
 	is_string(object.get(change.change.after, "secret_data", null))
-	msg := sprintf("[CIS 1.18] secrets: %v carries a literal secret value in the configuration", [change.address])
+	msg := sprintf("[design] secrets: %v carries a literal secret value in the configuration", [change.address])
 }
 
 deny contains msg if {
@@ -55,7 +59,7 @@ deny contains msg if {
 	change.type == "google_secret_manager_secret_version"
 	object.get(change.change.after, "secret_data", null) == null
 	object.get(change.change, ["after_unknown", "secret_data"], false) == false
-	msg := sprintf("[CIS 1.18] secrets: %v sets a secret value already known at plan time; it comes from the configuration", [change.address])
+	msg := sprintf("[design] secrets: %v sets a secret value already known at plan time; it comes from the configuration", [change.address])
 }
 
 # CIS 1.11 - KMS keys must rotate within 90 days.

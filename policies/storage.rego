@@ -21,7 +21,11 @@ public_principals := {"allUsers", "allAuthenticatedUsers"}
 # absent key, and Rego treats null as truthy. Absence is therefore tested with
 # object.get and an explicit comparison, never with a bare `not`.
 
-# CIS 5.1 - buckets must not be anonymously or publicly accessible.
+# CIS 5.1 - buckets must not be anonymously or publicly accessible. The
+# benchmark's audit for 5.1 inspects the bucket IAM policy for allUsers and
+# allAuthenticatedUsers, so only the first rule below implements it. Public
+# access prevention is a separate mechanism that the benchmark does not state,
+# and its rule is labelled accordingly.
 deny contains msg if {
   some change in input.resource_changes
   change.type == "google_storage_bucket_iam_member"
@@ -33,7 +37,7 @@ deny contains msg if {
   some change in input.resource_changes
   change.type == "google_storage_bucket"
   object.get(change.change.after, "public_access_prevention", "") != "enforced"
-  msg := sprintf("[CIS 5.1] storage: bucket %v does not set public_access_prevention = enforced", [change.change.after.name])
+  msg := sprintf("[design] storage: bucket %v does not set public_access_prevention = enforced", [change.change.after.name])
 }
 
 # CIS 5.2 - uniform bucket-level access must be enabled.
