@@ -33,3 +33,34 @@ deny contains msg if {
   rule.enforce == "FALSE"
   msg := "[CIS 1.5] credentials: constraint iam.disableServiceAccountKeyCreation is being turned off"
 }
+
+# FEDERATION SCOPING
+#
+# Replacing a downloaded key with federation removes a stored secret. It does
+# not by itself remove a long-lived path in. Federation that accepts any caller
+# the issuer will sign for is a worse credential than the key it replaced,
+# because nothing has to leak for it to be used.
+#
+# The benchmark does not reach this. CIS 1.5 and 1.8 address service account
+# keys, which is the mechanism federation exists to avoid, so these are design
+# rules of this landing zone rather than CIS requirements.
+
+no_attribute_condition(after) if object.get(after, "attribute_condition", null) == null
+
+no_attribute_condition(after) if object.get(after, "attribute_condition", null) == ""
+
+deny contains msg if {
+  some change in input.resource_changes
+  change.type == "google_iam_workload_identity_pool_provider"
+  no_attribute_condition(change.change.after)
+  msg := sprintf("[design] credentials: %v sets no attribute_condition; every identity the issuer signs for can exchange a token here", [change.address])
+}
+
+deny contains msg if {
+  some change in input.resource_changes
+  change.type == "google_service_account_iam_member"
+  change.change.after.role == "roles/iam.workloadIdentityUser"
+  member := change.change.after.member
+  endswith(member, "/*")
+  msg := sprintf("[design] credentials: %v grants impersonation to an entire identity pool; scope the principalSet to one repository", [member])
+}

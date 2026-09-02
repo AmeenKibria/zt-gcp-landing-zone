@@ -47,30 +47,56 @@ deny contains msg if {
   msg := sprintf("[design] iam: roles/viewer granted to %v; its scope is unbounded, use roles/browser or a bounded predefined role", [change.change.after.member])
 }
 
+# IMPERSONATION
+#
+# This landing zone relies on impersonation rather than on standing permissions,
+# so the rules below draw a line through it rather than around it.
+#
+#   service account -> service account   permitted. The pipeline assumes a
+#                                        task-scoped account for each job.
+#   group -> service account             permitted. A named group holds the
+#                                        emergency path into one service
+#                                        project. The grant is standing, but
+#                                        holding it confers nothing until a
+#                                        token is minted, and minting one is
+#                                        recorded against the person who did it.
+#   individual -> service account        denied. A binding to one person is a
+#                                        permission that no membership review
+#                                        will ever surface.
+#   anyone -> project level              denied. CIS 1.7.
+
 # CIS 1.7 - Service Account User and Token Creator must not be held at project
-# level. A project-level grant confers impersonation over every service account
-# in the project, present and future, which is what the benchmark prohibits.
+# level, where they confer impersonation over every service account in the
+# project, present and future.
+#
+# The benchmark says "IAM Users". This rule reads a group of users as covered,
+# because a project-level grant to a group has the same effect as the same grant
+# to each of its members. The interpretation is stated rather than assumed.
 deny contains msg if {
   some change in input.resource_changes
   change.type == "google_project_iam_member"
   impersonation_roles[change.change.after.role]
-  startswith(change.change.after.member, "user:")
+  human_principal(change.change.after.member)
   msg := sprintf("[CIS 1.7] iam: %v granted at project level to %v; it confers impersonation over every service account in the project", [change.change.after.role, change.change.after.member])
 }
 
 # Beyond the benchmark. A grant scoped to one service account is outside CIS 1.7,
-# which addresses project-level grants only. This landing zone denies it to human
-# principals anyway: a person who can act as a service account has a path to
-# change infrastructure that does not pass through the pipeline, which is the
-# escalation the design exists to remove.
+# which addresses project-level grants only.
 #
-# The same grant to a service account is deliberately NOT denied. The pipeline
-# impersonates a task-scoped service account for each job, and that chain is the
-# mechanism by which least privilege is applied per job rather than per pipeline.
+# Such a grant is denied to a named individual and permitted to a group. The
+# distinction is not bureaucratic. A group is a membership list that access
+# review reads and that leaver processes update. A binding to one person is a
+# permission that no review will surface, because nobody thinks to look in the
+# IAM policy of a service account for it.
 deny contains msg if {
   some change in input.resource_changes
   change.type == "google_service_account_iam_member"
   impersonation_roles[change.change.after.role]
   startswith(change.change.after.member, "user:")
-  msg := sprintf("[design] iam: %v grants impersonation to human principal %v; humans have no path to act as automation", [change.change.after.role, change.change.after.member])
+  msg := sprintf("[design] iam: %v granted to the individual %v; emergency impersonation is held by a group so that membership is the reviewed control", [change.change.after.role, change.change.after.member])
 }
+
+human_principal(member) if startswith(member, "user:")
+
+human_principal(member) if startswith(member, "group:")
+
