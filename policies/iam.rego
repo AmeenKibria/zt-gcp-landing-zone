@@ -15,20 +15,36 @@ package landingzone.iam
 # (Rose et al., 2020, pp. 6-7).
 # CIS GCP Foundation Benchmark v5.0.0: 1.6, 1.7, 1.9.
 
-basic_roles := {"roles/owner", "roles/editor", "roles/viewer"}
+# CIS 1.6 is titled "Ensure That Service Account Has No Admin Privileges", so
+# the rule that cites it covers the two basic roles that confer admin. Read-only
+# is handled separately below, under [design], because the benchmark does not
+# reach it and this policy set should not claim that it does.
+admin_basic_roles := {"roles/owner", "roles/editor"}
 
 impersonation_roles := {
   "roles/iam.serviceAccountTokenCreator",
   "roles/iam.serviceAccountUser",
 }
 
-# CIS 1.6 - service accounts must not hold admin privileges.
+# CIS 1.6 - no principal may hold admin privileges through a basic role.
 deny contains msg if {
   some change in input.resource_changes
   change.type == "google_project_iam_member"
   role := change.change.after.role
-  basic_roles[role]
+  admin_basic_roles[role]
   msg := sprintf("[CIS 1.6] iam: basic role %v granted to %v; use a predefined or custom role", [role, change.change.after.member])
+}
+
+# Beyond the benchmark. roles/viewer confers no admin privilege, so CIS 1.6 does
+# not reach it. Its scope is nonetheless unbounded, and it widens on its own as
+# Google adds services to the platform, so a principal granted it today holds
+# read access to resource types that did not exist when the grant was reviewed.
+# This landing zone grants roles/browser plus bounded predefined roles instead.
+deny contains msg if {
+  some change in input.resource_changes
+  change.type == "google_project_iam_member"
+  change.change.after.role == "roles/viewer"
+  msg := sprintf("[design] iam: roles/viewer granted to %v; its scope is unbounded, use roles/browser or a bounded predefined role", [change.change.after.member])
 }
 
 # CIS 1.7 - Service Account User / Token Creator must not be held at project level.
