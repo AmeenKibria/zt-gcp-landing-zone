@@ -12,7 +12,7 @@ package landingzone.secrets
 # not state. Those are deliberate additions, not gaps in the citation.
 
 # Zero Trust tenets 3 and 6 (Rose et al., 2020, pp. 6-7).
-# CIS GCP Foundation Benchmark v5.0.0: 1.11, 1.12. See the note on 1.18 below.
+# CIS GCP Foundation Benchmark v5.0.0: 1.10, 1.11, 1.12. See the note on 1.18 below.
 #
 # The separation rule below encodes a documented failure: at Capital One the
 # data was encrypted, but the compromised role also held decrypt, so encryption
@@ -107,4 +107,16 @@ deny contains msg if {
 	some member in storage_readers
 	decrypters[member]
 	msg := sprintf("[CIS 1.12] secrets: %v holds both object read and key decrypt; encryption gives no separation", [member])
+}
+
+# CIS 1.10 - Cloud KMS keys must not be anonymously or publicly accessible.
+# The same two principals that make a bucket public make a key public. A key
+# readable by allUsers protects nothing, whatever else is done with it.
+public_principals := {"allUsers", "allAuthenticatedUsers"}
+
+deny contains msg if {
+	some change in input.resource_changes
+	change.type in {"google_kms_crypto_key_iam_member", "google_kms_key_ring_iam_member"}
+	public_principals[change.change.after.member]
+	msg := sprintf("[CIS 1.10] secrets: %v grants %v to %v; a key readable by the public protects nothing", [change.address, change.change.after.role, change.change.after.member])
 }

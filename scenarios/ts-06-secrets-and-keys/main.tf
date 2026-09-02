@@ -83,3 +83,10 @@ resource "google_storage_bucket_iam_member" "workload_read" {
   role   = "roles/storage.objectViewer"
   member = "serviceAccount:${google_service_account.workload.email}"
 }
+
+# (5) The key itself made readable by anyone.
+resource "google_kms_crypto_key_iam_member" "public_key_viewer" {
+  crypto_key_id = google_kms_crypto_key.clinical.id
+  role          = "roles/cloudkms.viewer"
+  member        = "allUsers"
+}

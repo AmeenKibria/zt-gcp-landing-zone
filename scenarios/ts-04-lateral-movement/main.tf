@@ -59,3 +59,12 @@ resource "google_project_iam_member" "workload_compute_admin" {
   role    = "roles/compute.admin"
   member  = "serviceAccount:${google_service_account.workload.email}"
 }
+
+# (4) A subnet with no flow logs. Movement across it leaves no record.
+resource "google_compute_subnetwork" "workload_quiet" {
+  name          = "workload-subnet-quiet"
+  network       = google_compute_network.workload.id
+  ip_cidr_range = "10.20.0.0/24"
+  region        = var.region
+  # log_config deliberately omitted
+}
