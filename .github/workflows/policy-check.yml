@@ -118,3 +118,21 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           echo "::error::${{ matrix.scenario }} was NOT blocked - check the policy"
           exit 1
+
+      # The plan JSON is the input every rule reasons over. Keeping it lets a
+      # rule that failed to match be diagnosed against real data rather than
+      # against an assumption about the shape.
+      #
+      # Treat these artifacts as sensitive. A Terraform plan records resource
+      # attribute values, and depending on the provider a value marked
+      # sensitive may still appear in the JSON in clear text.
+      - name: Upload plan and result for inspection
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: plan-${{ matrix.scenario }}
+          path: |
+            scenarios/${{ matrix.scenario }}/plan.json
+            scenarios/${{ matrix.scenario }}/result.json
+          retention-days: 7
+          if-no-files-found: warn

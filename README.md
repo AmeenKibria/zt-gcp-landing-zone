@@ -77,8 +77,15 @@ GitHub mints a short-lived OIDC token, GCP exchanges it, nothing long-lived is
 stored. The `attribute_condition` in the bootstrap restricts the exchange to this
 repository — without it, any GitHub repository could obtain these credentials.
 
-The pipeline service account holds `roles/viewer` only. `terraform plan` needs no
-more, and the gate never applies anything.
+The pipeline service account holds `roles/browser` only. It never applies
+anything, so it needs no more than enough read access to resolve the project and
+plan a set of creates.
+
+`roles/viewer` would have been the obvious choice and it is the wrong one: the
+policy set denies every basic role, `roles/viewer` included (CIS 1.6). Granting
+it here would give the artifact a role its own gate forbids, and the only reason
+that never surfaces is that the bootstrap is applied by hand and never passes
+through the gate.
 
 ## Terraform state
 

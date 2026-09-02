@@ -67,9 +67,20 @@ resource "google_service_account_iam_member" "github_impersonation" {
   ])
 }
 
-# terraform plan needs no more than read access. The gate never applies.
-resource "google_project_iam_member" "pipeline_viewer" {
+# The pipeline never applies anything, so it needs only enough read access for
+# the provider to resolve the project and plan a set of creates.
+#
+# roles/viewer was the obvious choice and it is the wrong one. The policy set
+# denies every basic role, roles/viewer included (iam.rego, CIS 1.6). Granting
+# it here would give the artifact a role its own gate forbids, and the only
+# reason that never surfaced is that the bootstrap is applied by hand and never
+# passes through the gate. That is the bootstrap trust problem, not a reason to
+# keep the role.
+#
+# roles/browser is predefined rather than basic. It grants read access to the
+# resource hierarchy without access to the resources inside it.
+resource "google_project_iam_member" "pipeline_browser" {
   project = var.project_id
-  role    = "roles/viewer"
+  role    = "roles/browser"
   member  = "serviceAccount:${google_service_account.pipeline.email}"
 }
