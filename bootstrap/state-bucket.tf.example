@@ -1,0 +1,51 @@
+# OPTIONAL — remote state for the bootstrap only.
+#
+# The bootstrap state describes the workload identity pool, the OIDC provider
+# and the pipeline service account. If it is lost, those resources still exist
+# in GCP but Terraform no longer knows about them, and the next apply either
+# fails on "already exists" or has to be repaired with terraform import.
+# That is the whole reason to move it off one laptop.
+#
+# The six scenario directories need NO backend. They are planned, never
+# applied, so they produce no state worth keeping, and every CI runner starts
+# from a clean checkout.
+#
+# HOW TO USE
+#   1. Rename this file to state-bucket.tf and run `terraform apply` once more.
+#      The bucket is created with local state still in effect.
+#   2. Uncomment the backend block at the bottom of this file, move it into
+#      main.tf (a backend must sit inside the terraform block), then run
+#      `terraform init -migrate-state` and answer yes.
+#   3. Delete the local terraform.tfstate and terraform.tfstate.backup.
+
+resource "google_storage_bucket" "tfstate" {
+  project                     = var.project_id
+  name                        = "${var.project_id}-tfstate"
+  location                    = var.region
+  uniform_bucket_level_access = true
+  public_access_prevention    = "enforced"
+  force_destroy               = false
+
+  # Versioning is what makes a corrupted or truncated state recoverable.
+  versioning {
+    enabled = true
+  }
+
+  lifecycle_rule {
+    condition {
+      num_newer_versions = 20
+    }
+    action {
+      type = "Delete"
+    }
+  }
+}
+
+# Then, inside the terraform { } block in main.tf:
+#
+#   backend "gcs" {
+#     bucket = "zt-lz-sandbox-tfstate"
+#     prefix = "bootstrap"
+#   }
+#
+# Backend blocks take no variables, so the bucket name is written literally.

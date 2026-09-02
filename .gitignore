@@ -1,0 +1,42 @@
+# Terraform working directories (any depth)
+.terraform/
+.terraform.lock.hcl
+
+# State files — never commit (they record attribute values in clear text)
+*.tfstate
+*.tfstate.*
+
+# Plan outputs
+tfplan.binary
+*.tfplan
+plan.json
+
+# Crash logs
+crash.log
+crash.*.log
+
+# Variable files (may contain secrets); keep examples
+*.tfvars
+*.tfvars.json
+!*.auto.tfvars.example
+!*.tfvars.example
+
+# Override files (local-only by convention)
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# CLI config
+.terraformrc
+terraform.rc
+
+# GCP credentials — never commit service account keys
+*.json.key
+*-sa-key.json
+application_default_credentials.json
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/

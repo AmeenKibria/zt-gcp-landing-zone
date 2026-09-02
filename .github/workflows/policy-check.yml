@@ -1,0 +1,120 @@
+name: Policy check
+
+# Runs on pull requests so a violation surfaces as a failed check with the
+# denial messages in the job summary. That screenshots better than a log tail.
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write        # required to mint the OIDC token for federation
+
+jobs:
+  policy:
+    name: ${{ matrix.scenario }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false     # evaluate every scenario, do not stop at the first
+      matrix:
+        scenario:
+          - ts-01-privilege-escalation
+          - ts-02-leaked-sa-key
+          - ts-03-public-bucket
+          - ts-04-lateral-movement
+          - ts-05-audit-logging-disabled
+          - ts-06-secrets-and-keys
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # No service account key is downloaded anywhere in this workflow. The
+      # policy set denies google_service_account_key, so the pipeline that
+      # enforces the rule holds itself to it.
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.WIF_SERVICE_ACCOUNT }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+
+      - name: Install Open Policy Agent
+        run: |
+          curl -sSL -o opa https://openpolicyagent.org/downloads/latest/opa_linux_amd64_static
+          chmod +x opa
+          sudo mv opa /usr/local/bin/opa
+          opa version
+
+      - name: Terraform plan
+        working-directory: scenarios/${{ matrix.scenario }}
+        run: |
+          terraform init -input=false
+          terraform plan -input=false -out=tfplan.binary
+          terraform show -json tfplan.binary > plan.json
+
+      - name: Evaluate policy
+        working-directory: scenarios/${{ matrix.scenario }}
+        run: |
+          # Three outcomes have to stay distinguishable, because only one of
+          # them is evidence that enforcement works.
+          #
+          #   OPA errors        -> the policy set is broken
+          #   zero denials      -> a rule failed to match; also a defect
+          #   one or more       -> the deployment was blocked, as intended
+          #
+          # An earlier version piped stderr into the same file and grepped for
+          # a quote character. A Rego compile error would then have been
+          # reported as a successful block.
+
+          if ! opa eval --format json --data ../../policies \
+                 --input plan.json 'data.main.deny' \
+                 > result.json 2> opa-error.txt; then
+            cat opa-error.txt
+            {
+              echo "## ${{ matrix.scenario }}"
+              echo ""
+              echo "**Policy evaluation failed.** This is a defect in the policy"
+              echo "set, not a blocked deployment."
+              echo ""
+              echo '```'
+              cat opa-error.txt
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::OPA could not evaluate the policy set"
+            exit 1
+          fi
+
+          jq -r '.result[0].expressions[0].value[]?' result.json > denials.txt
+          count=$(grep -c . denials.txt || true)
+
+          echo "denials: $count"
+          cat denials.txt
+
+          if [ "$count" -gt 0 ]; then
+            {
+              echo "## ${{ matrix.scenario }}"
+              echo ""
+              echo "**Deployment blocked.** $count rule(s) fired:"
+              echo ""
+              echo '```'
+              cat denials.txt
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::${{ matrix.scenario }} blocked by policy - this is the expected result"
+            exit 1
+          fi
+
+          {
+            echo "## ${{ matrix.scenario }}"
+            echo ""
+            echo "**No violation detected.** This scenario is deliberately"
+            echo "non-compliant, so an empty result means a rule failed to match"
+            echo "rather than that the configuration is safe."
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::error::${{ matrix.scenario }} was NOT blocked - check the policy"
+          exit 1
