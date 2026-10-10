@@ -14,10 +14,12 @@ package landingzone.secrets
 # Zero Trust tenets 3 and 6 (Rose et al., 2020, pp. 6-7).
 # CIS GCP Foundation Benchmark v5.0.0: 1.10, 1.11, 1.12. See the note on 1.18 below.
 #
-# The separation rule below encodes a documented failure: at Capital One the
-# data was encrypted, but the compromised role also held decrypt, so encryption
-# provided no protection (Khan et al., 2022, Section 3.2). CIS 1.12 requires
-# exactly this separation independently.
+# Two separation rules follow. The first implements CIS 1.12 as the benchmark
+# states it: no principal holds Cloud KMS Admin together with a role that
+# encrypts or decrypts with a key. The second encodes a documented failure that
+# 1.12 does not state: at Capital One the data was encrypted, but the
+# compromised role also held decrypt, so encryption provided no protection
+# (Khan et al., 2022, Section 3.2). That one is labelled [design].
 #
 # NOTE ON UNSET ATTRIBUTES
 # An optional attribute that the configuration omits is not absent from the
@@ -88,7 +90,50 @@ deny contains msg if {
 	msg := sprintf("[design] secrets: bucket %v sets no customer-managed encryption key", [change.change.after.name])
 }
 
-# CIS 1.12 - separation of duties on KMS roles.
+# CIS 1.12 - separation of duties on KMS roles. The benchmark's condition is
+# that no principal holds Cloud KMS Admin and any of the three CryptoKey
+# Encrypter/Decrypter roles at the same time. Its audit reads the project IAM
+# policy. A grant on a key ring or on a key confers the same role on what it
+# covers, so this rule reads grants at all three levels.
+kms_admin_role := "roles/cloudkms.admin"
+
+kms_crypto_roles := {
+	"roles/cloudkms.cryptoKeyEncrypterDecrypter",
+	"roles/cloudkms.cryptoKeyEncrypter",
+	"roles/cloudkms.cryptoKeyDecrypter",
+}
+
+kms_grant_types := {
+	"google_project_iam_member",
+	"google_kms_key_ring_iam_member",
+	"google_kms_crypto_key_iam_member",
+}
+
+kms_admins contains member if {
+	some change in input.resource_changes
+	change.type in kms_grant_types
+	change.change.after.role == kms_admin_role
+	member := change.change.after.member
+}
+
+kms_key_users contains member if {
+	some change in input.resource_changes
+	change.type in kms_grant_types
+	kms_crypto_roles[change.change.after.role]
+	member := change.change.after.member
+}
+
+deny contains msg if {
+	some member in kms_admins
+	kms_key_users[member]
+	msg := sprintf("[CIS 1.12] secrets: %v holds Cloud KMS Admin and a key encrypt or decrypt role; administering a key and using it are not separated", [member])
+}
+
+# Beyond the benchmark. The identity that reads the objects must not also hold
+# decrypt on the key protecting them. CIS 1.12 is the nearest statement of the
+# principle, but its condition is key administration held together with key
+# use, not object read held together with decrypt. This is a design rule
+# informed by 1.12 rather than an implementation of it.
 storage_readers contains member if {
 	some change in input.resource_changes
 	change.type == "google_storage_bucket_iam_member"
@@ -106,7 +151,7 @@ decrypters contains member if {
 deny contains msg if {
 	some member in storage_readers
 	decrypters[member]
-	msg := sprintf("[CIS 1.12] secrets: %v holds both object read and key decrypt; encryption gives no separation", [member])
+	msg := sprintf("[design] secrets: %v holds both object read and key decrypt; encryption gives no separation", [member])
 }
 
 # CIS 1.10 - Cloud KMS keys must not be anonymously or publicly accessible.

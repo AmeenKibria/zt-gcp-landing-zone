@@ -23,7 +23,8 @@ variable "region" {
   default = "europe-north1"
 }
 
-# ts-06  Secret in code, and data encrypted with a key the workload can decrypt
+# ts-06  Secret in code, data encrypted with a key the workload can decrypt, and
+#        a key administrator who can also use the key
 # NON-COMPLIANT by design.
 
 resource "google_service_account" "workload" {
@@ -89,4 +90,19 @@ resource "google_kms_crypto_key_iam_member" "public_key_viewer" {
   crypto_key_id = google_kms_crypto_key.clinical.id
   role          = "roles/cloudkms.viewer"
   member        = "allUsers"
+}
+
+# (6) Key administration and key use held by the same person. CIS 1.12 asks
+#     that no principal hold Cloud KMS Admin together with a role that
+#     encrypts or decrypts with a key.
+resource "google_project_iam_member" "custodian_kms_admin" {
+  project = var.project_id
+  role    = "roles/cloudkms.admin"
+  member  = "user:key-custodian@example.com"
+}
+
+resource "google_kms_crypto_key_iam_member" "custodian_decrypt" {
+  crypto_key_id = google_kms_crypto_key.clinical.id
+  role          = "roles/cloudkms.cryptoKeyEncrypterDecrypter"
+  member        = "user:key-custodian@example.com"
 }

@@ -26,7 +26,7 @@ scenarios/                           six non-compliant configurations
 | ts-03 | Bucket public, no uniform bucket-level access | Storage | 2 | 5.1, 5.2 |
 | ts-04 | SSH and RDP open to 0.0.0.0/0, broad admin role | Network | 2, 4 | 3.6, 3.7 |
 | ts-05 | Audit logging narrowed, account exempted | Logging | 5, 7 | 2.1 |
-| ts-06 | Secret in code, no CMEK, decrypt held by reader | Secrets and keys | 3, 6 | 1.11, 1.12, 1.18 |
+| ts-06 | Secret in code, no CMEK, public key, decrypt held by reader, key admin who can decrypt | Secrets and keys | 3, 6 | 1.10, 1.11, 1.12, 1.18 |
 
 Tenets from NIST SP 800-207, Section 2.1, pp. 6–7. CIS identifiers from the
 Google Cloud Platform Foundation Benchmark v5.0.0.
