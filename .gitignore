@@ -40,3 +40,9 @@ application_default_credentials.json
 .DS_Store
 .idea/
 .vscode/
+
+# Platform-layer test: configuration and raw output carry real identifiers
+platform-tests/config.env
+platform-tests/out/
+platform-tests/bin/
+platform-tests/**/result.json

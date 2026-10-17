@@ -161,6 +161,12 @@ terraform show -json tfplan.binary > plan.json
 opa eval --format pretty --data ../../policies --input plan.json 'data.main.deny'
 ```
 
+## Platform-layer test
+
+`platform-tests/` puts the same kinds of change through the gate and directly
+to Google Cloud in a personal test organisation, to observe the platform layer
+rather than only document it. See `platform-tests/README.md`.
+
 ## Known limits
 
 The gate reads one plan. It cannot see a violation split across two changes
