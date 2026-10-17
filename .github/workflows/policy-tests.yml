@@ -1,0 +1,82 @@
+name: Policy unit tests
+
+# Every rule is tested against hand-written plan fragments: a violating case, a
+# compliant case, and where they apply a boundary value, a deletion, a data
+# source, an unknown value and a binding instead of a member. Tests named
+# test_gap_* assert a limit that is known and stated, so that closing it later
+# shows up as a change rather than passing silently.
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  OPA_VERSION: v1.21.1
+  # SHA-256 of opa_linux_amd64_static for this release, as published beside it.
+  OPA_SHA256: 668506eb17a2eaa1fce6cc0d1f42ef85125d4ac5bda5fc74d1152d0c77145031
+
+jobs:
+  unit-tests:
+    name: opa test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Open Policy Agent (pinned, checksum verified)
+        run: |
+          curl -sSL -o opa "https://github.com/open-policy-agent/opa/releases/download/${OPA_VERSION}/opa_linux_amd64_static"
+          echo "${OPA_SHA256}  opa" | sha256sum --check --strict
+          chmod +x opa
+          sudo mv opa /usr/local/bin/opa
+          opa version
+
+      - name: Run unit tests
+        run: |
+          set -o pipefail
+          opa test policies tests --verbose | tee test-results.txt
+
+      - name: Summarise results and coverage
+        if: always()
+        run: |
+          opa test policies tests --format json > results.json || true
+          opa test policies tests --coverage --format json > coverage.json || true
+          python3 - <<'PY' | tee -a "$GITHUB_STEP_SUMMARY"
+          import json
+          results = json.load(open("results.json"))
+          failed = [r for r in results if r.get("fail") or r.get("error")]
+          gaps = [r for r in results if r["name"].startswith("test_gap_")]
+          print("## Policy unit tests\n")
+          print(f"**{len(results) - len(failed)} of {len(results)} passed.** "
+                f"{len(gaps)} tests assert a stated gap.\n")
+          if failed:
+              print("Failed:\n")
+              for r in failed:
+                  print(f"- `{r['package']}.{r['name']}`")
+              print()
+          try:
+              cov = json.load(open("coverage.json"))
+          except ValueError:
+              cov = None
+          if cov is None:
+              print("Line coverage is reported only when every test passes.")
+          else:
+              print(f"Line coverage of the policy set: {cov.get('coverage', 0):.1f}%\n")
+              print("| File | Coverage |\n|---|---|")
+              for f, v in sorted(cov["files"].items()):
+                  if f.startswith("policies/"):
+                      print(f"| {f} | {v.get('coverage', 0):.1f}% |")
+          PY
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: policy-unit-tests
+          path: |
+            test-results.txt
+            results.json
+            coverage.json
+          retention-days: 30

@@ -1,0 +1,3 @@
+[CIS 1.6] iam: serviceAccount:platform-admin@zt-lz-sandbox.iam.gserviceaccount.com holds roles/owner at project level; a service account must not hold an admin, owner or editor role
+[design] iam: basic role roles/owner granted to user:developer@example.com at project level; use a predefined or custom role
+[design] iam: roles/iam.serviceAccountTokenCreator granted to the individual user:developer@example.com; emergency impersonation is held by a group so that membership is the reviewed control

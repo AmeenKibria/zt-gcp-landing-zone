@@ -1,0 +1,1 @@
+[CIS 1.5] credentials: google_service_account_key.p01 creates a user-managed service account key; use identity federation

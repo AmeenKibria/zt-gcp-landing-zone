@@ -1,0 +1,2 @@
+[CIS 5.2] storage: bucket <PROJECT_ID>-p02 does not enable uniform_bucket_level_access
+[design] secrets: bucket <PROJECT_ID>-p02 sets no customer-managed encryption key

@@ -1,0 +1,9 @@
+case	cis	gate_expected	platform_expected	platform_match
+p01-sa-key	1.5	deny	refused	disableServiceAccountKeyCreation
+p02-bucket-acl	5.2	deny	refused	uniformBucketLevelAccess
+p03-vm-external-ip	4.9	allow	refused	vmExternalIpAccess
+p04-vm-ip-forward	4.6	allow	refused	vmCanIpForward
+p05-vm-not-shielded	4.8	allow	refused	requireShieldedVm
+p06-sql-public-ip	6.5 6.7	allow	refused	restrictPublicIp
+c01-vm-compliant	-	allow	created	-
+p08-firewall-ssh-open	3.6	deny	created	-

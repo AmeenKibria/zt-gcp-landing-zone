@@ -1,0 +1,2 @@
+[CIS 2.1] logging: ["serviceAccount:platform@zt-lz-sandbox.iam.gserviceaccount.com"] exempted from DATA_READ logging on storage.googleapis.com
+[CIS 2.1] logging: audit config for allServices is missing log types {"DATA_READ", "DATA_WRITE"}
