@@ -1,5 +1,7 @@
 package landingzone.credentials
 
+import data.landingzone.lib
+
 # MESSAGE CONVENTION
 # A denial names the control it enforces and the security area it belongs to.
 # It does not name a threat scenario. Rules are global: every rule is evaluated
@@ -17,7 +19,7 @@ package landingzone.credentials
 
 # CIS 1.5 - only GCP-managed service account keys should exist.
 deny contains msg if {
-  some change in input.resource_changes
+  some change in lib.proposed
   change.type == "google_service_account_key"
   # service_account_id references another resource, so it is unknown at plan
   # time. The address identifies the offending resource without it.
@@ -26,7 +28,7 @@ deny contains msg if {
 
 # Do not let the guardrail itself be switched off.
 deny contains msg if {
-  some change in input.resource_changes
+  some change in lib.proposed
   change.type == "google_org_policy_policy"
   # Google publishes two generations of constraint identifier for the same
   # control: the legacy "iam.disableServiceAccountKeyCreation" and the newer
@@ -35,7 +37,11 @@ deny contains msg if {
   # suffix is matched. A rule that hard-codes a vendor identifier inherits the
   # vendor's renaming schedule.
   contains(change.change.after.name, "disableServiceAccountKeyCreation")
-  some rule in change.change.after.spec.rules
+  # `spec` is a nested block, and the plan writes a nested block as a list even
+  # when it can occur only once. An earlier version read spec.rules as if spec
+  # were an object; on a real plan that path is empty and the rule never fired.
+  some spec in change.change.after.spec
+  some rule in spec.rules
   rule.enforce == "FALSE"
   msg := "[CIS 1.5] credentials: constraint iam.disableServiceAccountKeyCreation is being turned off"
 }
@@ -56,7 +62,7 @@ no_attribute_condition(after) if object.get(after, "attribute_condition", null) 
 no_attribute_condition(after) if object.get(after, "attribute_condition", null) == ""
 
 deny contains msg if {
-  some change in input.resource_changes
+  some change in lib.proposed
   change.type == "google_iam_workload_identity_pool_provider"
   no_attribute_condition(change.change.after)
   msg := sprintf("[design] credentials: %v sets no attribute_condition; every identity the issuer signs for can exchange a token here", [change.address])
@@ -77,18 +83,22 @@ deny contains msg if {
 # cannot be verified here has not been verified anywhere.
 
 deny contains msg if {
-  some change in input.resource_changes
-  change.type == "google_service_account_iam_member"
-  change.change.after.role == "roles/iam.workloadIdentityUser"
-  member := object.get(change.change.after, "member", "")
-  endswith(member, "/*")
-  msg := sprintf("[design] credentials: %v grants impersonation to an entire identity pool; scope the principalSet to one repository", [member])
+  some grant in lib.grants
+  grant.level == "service_account"
+  grant.role == "roles/iam.workloadIdentityUser"
+  endswith(grant.member, "/*")
+  msg := sprintf("[design] credentials: %v grants impersonation to an entire identity pool; scope the principalSet to one repository", [grant.member])
 }
 
+# A member resource records the unknown value under `member`, a binding under
+# `members`. Either is denied.
+federation_types := {"google_service_account_iam_member", "google_service_account_iam_binding"}
+
 deny contains msg if {
-  some change in input.resource_changes
-  change.type == "google_service_account_iam_member"
+  some change in lib.proposed
+  federation_types[change.type]
   change.change.after.role == "roles/iam.workloadIdentityUser"
-  object.get(change.change, ["after_unknown", "member"], false) == true
+  some attribute in {"member", "members"}
+  object.get(change.change, ["after_unknown", attribute], false) == true
   msg := sprintf("[design] credentials: %v grants workloadIdentityUser to a principalSet that is not known at plan time; its scope cannot be verified here", [change.address])
 }

@@ -1,0 +1,4 @@
+[CIS 5.1] storage: bucket zt-lz-sandbox-clinical-reports-export grants roles/storage.objectViewer to allUsers
+[CIS 5.2] storage: bucket zt-lz-sandbox-clinical-reports-export does not enable uniform_bucket_level_access
+[design] secrets: bucket zt-lz-sandbox-clinical-reports-export sets no customer-managed encryption key
+[design] storage: bucket zt-lz-sandbox-clinical-reports-export does not set public_access_prevention = enforced

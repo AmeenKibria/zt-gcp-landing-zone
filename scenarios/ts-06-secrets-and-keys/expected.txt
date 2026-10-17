@@ -1,0 +1,6 @@
+[CIS 1.10] secrets: google_kms_crypto_key_iam_member.public_key_viewer grants roles/cloudkms.viewer to allUsers; a key readable by the public protects nothing
+[CIS 1.11] secrets: crypto key clinical-data-key sets no rotation_period
+[CIS 1.12] secrets: user:key-custodian@example.com holds Cloud KMS Admin and a key encrypt or decrypt role; administering a key and using it are not separated
+[design] secrets: bucket zt-lz-sandbox-clinical-data sets no customer-managed encryption key
+[design] secrets: google_secret_manager_secret_version.db_password carries a literal secret value in the configuration
+[design] secrets: serviceAccount:data-reader@zt-lz-sandbox.iam.gserviceaccount.com holds both object read and key decrypt; encryption gives no separation

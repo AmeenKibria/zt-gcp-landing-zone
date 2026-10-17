@@ -1,0 +1,3 @@
+[CIS 1.5] credentials: google_service_account_key.workload_key creates a user-managed service account key; use identity federation
+[design] credentials: google_iam_workload_identity_pool_provider.loose sets no attribute_condition; every identity the issuer signs for can exchange a token here
+[design] credentials: google_service_account_iam_member.pool_wide_impersonation grants workloadIdentityUser to a principalSet that is not known at plan time; its scope cannot be verified here

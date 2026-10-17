@@ -45,3 +45,12 @@ resource "google_service_account_iam_member" "impersonate_platform_sa" {
   role               = "roles/iam.serviceAccountTokenCreator"
   member             = "user:developer@example.com"
 }
+
+# (3) The account the developer can impersonate holds the owner role, so
+#     impersonating it is an escalation to ownership of the project. CIS 1.6
+#     addresses exactly this: a service account holding an admin role.
+resource "google_project_iam_member" "platform_sa_owner" {
+  project = var.project_id
+  role    = "roles/owner"
+  member  = "serviceAccount:${google_service_account.platform.email}"
+}

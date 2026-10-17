@@ -1,7 +1,18 @@
 name: Policy check
 
 # Runs on pull requests so a violation surfaces as a failed check with the
-# denial messages in the job summary. That screenshots better than a log tail.
+# denial messages in the job summary.
+#
+# Every configuration states its expected outcome:
+#   deny   a deliberately non-compliant configuration; the job fails when the
+#          gate blocks it, which is the intended result
+#   allow  a compliant configuration (or one half of the split-plan case); the
+#          job passes only if the gate lets it through with no denial
+# Each directory also holds expected.txt, the exact denials the configuration
+# should produce. The job reports whether the output matched, so a rule that
+# fires on the wrong thing, or with the wrong label, is visible even when the
+# pass or fail colour is right.
+
 on:
   pull_request:
   workflow_dispatch:
@@ -10,21 +21,36 @@ permissions:
   contents: read
   id-token: write        # required to mint the OIDC token for federation
 
+env:
+  TERRAFORM_VERSION: 1.9.8
+  OPA_VERSION: v1.21.1
+  # SHA-256 of opa_linux_amd64_static for this release, as published beside it.
+  OPA_SHA256: 668506eb17a2eaa1fce6cc0d1f42ef85125d4ac5bda5fc74d1152d0c77145031
+
 jobs:
   policy:
     name: ${{ matrix.scenario }}
     runs-on: ubuntu-latest
 
     strategy:
-      fail-fast: false     # evaluate every scenario, do not stop at the first
+      fail-fast: false     # evaluate every configuration, do not stop at the first
       matrix:
-        scenario:
-          - ts-01-privilege-escalation
-          - ts-02-leaked-sa-key
-          - ts-03-public-bucket
-          - ts-04-lateral-movement
-          - ts-05-audit-logging-disabled
-          - ts-06-secrets-and-keys
+        include:
+          - { scenario: ts-01-privilege-escalation,    expect: deny }
+          - { scenario: ts-02-leaked-sa-key,           expect: deny }
+          - { scenario: ts-03-public-bucket,           expect: deny }
+          - { scenario: ts-04-lateral-movement,        expect: deny }
+          - { scenario: ts-05-audit-logging-disabled,  expect: deny }
+          - { scenario: ts-06-secrets-and-keys,        expect: deny }
+          - { scenario: tc-01-privilege-escalation,    expect: allow }
+          - { scenario: tc-02-leaked-sa-key,           expect: allow }
+          - { scenario: tc-03-public-bucket,           expect: allow }
+          - { scenario: tc-04-lateral-movement,        expect: allow }
+          - { scenario: tc-05-audit-logging-disabled,  expect: allow }
+          - { scenario: tc-06-secrets-and-keys,        expect: allow }
+          - { scenario: ts-07a-split-kms-admin,        expect: allow }
+          - { scenario: ts-07b-split-kms-use,          expect: allow }
+          - { scenario: tx-01-rule-coverage,           expect: deny }
 
     steps:
       - uses: actions/checkout@v4
@@ -41,13 +67,21 @@ jobs:
 
       - uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.9.8
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
 
-      - name: Install Open Policy Agent
+      - name: Install Open Policy Agent (pinned, checksum verified)
         run: |
-          curl -sSL -o opa https://openpolicyagent.org/downloads/latest/opa_linux_amd64_static
+          curl -sSL -o opa "https://github.com/open-policy-agent/opa/releases/download/${OPA_VERSION}/opa_linux_amd64_static"
+          echo "${OPA_SHA256}  opa" | sha256sum --check --strict
           chmod +x opa
           sudo mv opa /usr/local/bin/opa
+
+      # The run records the tools that produced it, so a result can be traced
+      # to the versions behind it.
+      - name: Record tool versions
+        run: |
+          terraform version
           opa version
 
       - name: Terraform plan
@@ -59,24 +93,17 @@ jobs:
 
       - name: Evaluate policy
         working-directory: scenarios/${{ matrix.scenario }}
+        env:
+          SCENARIO: ${{ matrix.scenario }}
+          EXPECT: ${{ matrix.expect }}
         run: |
-          # Three outcomes have to stay distinguishable, because only one of
-          # them is evidence that enforcement works.
-          #
-          #   OPA errors        -> the policy set is broken
-          #   zero denials      -> a rule failed to match; also a defect
-          #   one or more       -> the deployment was blocked, as intended
-          #
-          # An earlier version piped stderr into the same file and grepped for
-          # a quote character. A Rego compile error would then have been
-          # reported as a successful block.
-
+          # OPA errors are a defect in the policy set, never a blocked deployment.
           if ! opa eval --format json --data ../../policies \
                  --input plan.json 'data.main.deny' \
                  > result.json 2> opa-error.txt; then
             cat opa-error.txt
             {
-              echo "## ${{ matrix.scenario }}"
+              echo "## $SCENARIO"
               echo ""
               echo "**Policy evaluation failed.** This is a defect in the policy"
               echo "set, not a blocked deployment."
@@ -89,35 +116,61 @@ jobs:
             exit 1
           fi
 
-          jq -r '.result[0].expressions[0].value[]?' result.json > denials.txt
+          jq -r '.result[0].expressions[0].value[]?' result.json | LC_ALL=C sort > denials.txt
           count=$(grep -c . denials.txt || true)
+          LC_ALL=C sort expected.txt > expected.sorted
+          if diff -u expected.sorted denials.txt > expected.diff; then
+            match="yes"
+          else
+            match="no"
+          fi
 
+          echo "expected outcome: $EXPECT"
           echo "denials: $count"
+          echo "matches expected.txt: $match"
           cat denials.txt
+          [ "$match" = "no" ] && cat expected.diff
 
-          if [ "$count" -gt 0 ]; then
-            {
-              echo "## ${{ matrix.scenario }}"
-              echo ""
+          {
+            echo "## $SCENARIO"
+            echo ""
+            if [ "$count" -gt 0 ]; then
               echo "**Deployment blocked.** $count rule(s) fired:"
               echo ""
               echo '```'
               cat denials.txt
               echo '```'
-            } >> "$GITHUB_STEP_SUMMARY"
-            echo "::error::${{ matrix.scenario }} blocked by policy - this is the expected result"
+            else
+              echo "**No denial.** The gate let this configuration through."
+            fi
+            echo ""
+            echo "Expected outcome: \`$EXPECT\`. Output matches expected.txt: **$match**."
+            if [ "$match" = "no" ]; then
+              echo ""
+              echo '```diff'
+              cat expected.diff
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          [ "$match" = "no" ] && echo "::error::$SCENARIO output differs from expected.txt"
+
+          if [ "$EXPECT" = "deny" ]; then
+            if [ "$count" -gt 0 ]; then
+              echo "::error::$SCENARIO blocked by policy - this is the expected result"
+              exit 1
+            fi
+            echo "::error::$SCENARIO was NOT blocked - a rule failed to match"
             exit 1
           fi
 
-          {
-            echo "## ${{ matrix.scenario }}"
-            echo ""
-            echo "**No violation detected.** This scenario is deliberately"
-            echo "non-compliant, so an empty result means a rule failed to match"
-            echo "rather than that the configuration is safe."
-          } >> "$GITHUB_STEP_SUMMARY"
-          echo "::error::${{ matrix.scenario }} was NOT blocked - check the policy"
-          exit 1
+          # expect: allow
+          if [ "$count" -gt 0 ]; then
+            echo "::error::$SCENARIO is compliant but was blocked - a false positive"
+            exit 1
+          fi
+          [ "$match" = "yes" ] || exit 1
+          echo "$SCENARIO passed with no denial, as expected"
 
       # The plan JSON is the input every rule reasons over. Keeping it lets a
       # rule that failed to match be diagnosed against real data rather than
@@ -134,5 +187,7 @@ jobs:
           path: |
             scenarios/${{ matrix.scenario }}/plan.json
             scenarios/${{ matrix.scenario }}/result.json
-          retention-days: 7
+            scenarios/${{ matrix.scenario }}/denials.txt
+            scenarios/${{ matrix.scenario }}/expected.diff
+          retention-days: 30
           if-no-files-found: warn

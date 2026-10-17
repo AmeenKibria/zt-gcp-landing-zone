@@ -1,5 +1,7 @@
 package landingzone.secrets
 
+import data.landingzone.lib
+
 # MESSAGE CONVENTION
 # A denial names the control it enforces and the security area it belongs to.
 # It does not name a threat scenario. Rules are global: every rule is evaluated
@@ -50,14 +52,14 @@ max_rotation_seconds := 7776000        # 90 days
 # once.
 
 deny contains msg if {
-	some change in input.resource_changes
+	some change in lib.proposed
 	change.type == "google_secret_manager_secret_version"
 	is_string(object.get(change.change.after, "secret_data", null))
 	msg := sprintf("[design] secrets: %v carries a literal secret value in the configuration", [change.address])
 }
 
 deny contains msg if {
-	some change in input.resource_changes
+	some change in lib.proposed
 	change.type == "google_secret_manager_secret_version"
 	object.get(change.change.after, "secret_data", null) == null
 	object.get(change.change, ["after_unknown", "secret_data"], false) == false
@@ -66,14 +68,14 @@ deny contains msg if {
 
 # CIS 1.11 - KMS keys must rotate within 90 days.
 deny contains msg if {
-	some change in input.resource_changes
+	some change in lib.proposed
 	change.type == "google_kms_crypto_key"
 	object.get(change.change.after, "rotation_period", null) == null
 	msg := sprintf("[CIS 1.11] secrets: crypto key %v sets no rotation_period", [change.change.after.name])
 }
 
 deny contains msg if {
-	some change in input.resource_changes
+	some change in lib.proposed
 	change.type == "google_kms_crypto_key"
 	period := object.get(change.change.after, "rotation_period", null)
 	period != null
@@ -84,7 +86,7 @@ deny contains msg if {
 
 # Data-holding buckets must use a customer-managed key.
 deny contains msg if {
-	some change in input.resource_changes
+	some change in lib.proposed
 	change.type == "google_storage_bucket"
 	count(object.get(change.change.after, "encryption", [])) == 0
 	msg := sprintf("[design] secrets: bucket %v sets no customer-managed encryption key", [change.change.after.name])
@@ -103,24 +105,18 @@ kms_crypto_roles := {
 	"roles/cloudkms.cryptoKeyDecrypter",
 }
 
-kms_grant_types := {
-	"google_project_iam_member",
-	"google_kms_key_ring_iam_member",
-	"google_kms_crypto_key_iam_member",
+kms_grant_levels := {"project", "key_ring", "crypto_key"}
+
+kms_admins contains grant.member if {
+	some grant in lib.grants
+	kms_grant_levels[grant.level]
+	grant.role == kms_admin_role
 }
 
-kms_admins contains member if {
-	some change in input.resource_changes
-	change.type in kms_grant_types
-	change.change.after.role == kms_admin_role
-	member := change.change.after.member
-}
-
-kms_key_users contains member if {
-	some change in input.resource_changes
-	change.type in kms_grant_types
-	kms_crypto_roles[change.change.after.role]
-	member := change.change.after.member
+kms_key_users contains grant.member if {
+	some grant in lib.grants
+	kms_grant_levels[grant.level]
+	kms_crypto_roles[grant.role]
 }
 
 deny contains msg if {
@@ -134,18 +130,29 @@ deny contains msg if {
 # principle, but its condition is key administration held together with key
 # use, not object read held together with decrypt. This is a design rule
 # informed by 1.12 rather than an implementation of it.
-storage_readers contains member if {
-	some change in input.resource_changes
-	change.type == "google_storage_bucket_iam_member"
-	startswith(change.change.after.role, "roles/storage.object")
-	member := change.change.after.member
+#
+# Only roles that read object data count. An earlier version counted every role
+# beginning roles/storage.object, which included objectCreator, a role that can
+# write objects but not read them.
+object_read_roles := {
+	"roles/storage.objectViewer",
+	"roles/storage.objectUser",
+	"roles/storage.objectAdmin",
+	"roles/storage.admin",
+	"roles/storage.legacyObjectReader",
+	"roles/storage.legacyObjectOwner",
 }
 
-decrypters contains member if {
-	some change in input.resource_changes
-	change.type == "google_kms_crypto_key_iam_member"
-	contains(change.change.after.role, "Decrypter")
-	member := change.change.after.member
+storage_readers contains grant.member if {
+	some grant in lib.grants
+	grant.level in {"bucket", "project"}
+	object_read_roles[grant.role]
+}
+
+decrypters contains grant.member if {
+	some grant in lib.grants
+	grant.level in {"crypto_key", "key_ring", "project"}
+	contains(grant.role, "Decrypter")
 }
 
 deny contains msg if {
@@ -157,11 +164,9 @@ deny contains msg if {
 # CIS 1.10 - Cloud KMS keys must not be anonymously or publicly accessible.
 # The same two principals that make a bucket public make a key public. A key
 # readable by allUsers protects nothing, whatever else is done with it.
-public_principals := {"allUsers", "allAuthenticatedUsers"}
-
 deny contains msg if {
-	some change in input.resource_changes
-	change.type in {"google_kms_crypto_key_iam_member", "google_kms_key_ring_iam_member"}
-	public_principals[change.change.after.member]
-	msg := sprintf("[CIS 1.10] secrets: %v grants %v to %v; a key readable by the public protects nothing", [change.address, change.change.after.role, change.change.after.member])
+	some grant in lib.grants
+	grant.level in {"crypto_key", "key_ring"}
+	lib.public_principals[grant.member]
+	msg := sprintf("[CIS 1.10] secrets: %v grants %v to %v; a key readable by the public protects nothing", [grant.address, grant.role, grant.member])
 }

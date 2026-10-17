@@ -1,0 +1,4 @@
+[CIS 1.6] iam: serviceAccount:workload-a@zt-lz-sandbox.iam.gserviceaccount.com holds roles/compute.admin at project level; a service account must not hold an admin, owner or editor role
+[CIS 3.10] network: subnet workload-subnet-quiet has no flow log configuration; nothing that crosses it will be recorded
+[CIS 3.6] network: firewall allow-ssh-from-anywhere exposes port 22 to 0.0.0.0/0
+[CIS 3.7] network: firewall allow-ssh-from-anywhere exposes port 3389 to 0.0.0.0/0

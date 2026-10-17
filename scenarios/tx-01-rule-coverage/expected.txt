@@ -1,0 +1,9 @@
+[CIS 1.11] secrets: crypto key tx01-long-rotation-key rotates every 31536000s, beyond the 7776000s maximum
+[CIS 1.5] credentials: constraint iam.disableServiceAccountKeyCreation is being turned off
+[CIS 1.7] iam: roles/iam.serviceAccountTokenCreator granted at project level to group:platform-emergency@example.com; it confers impersonation over every service account in the project
+[CIS 3.10] network: subnet tx01-subnet-sampled flow logs do not meet the benchmark settings (flow_sampling)
+[CIS 3.6] network: firewall tx01-allow-range-world exposes port 22 to 0.0.0.0/0
+[CIS 5.1] storage: bucket zt-lz-sandbox-tx01-binding-check grants roles/storage.objectViewer to allUsers
+[design] credentials: principalSet://iam.googleapis.com/projects/000000000000/locations/global/workloadIdentityPools/github-pool/* grants impersonation to an entire identity pool; scope the principalSet to one repository
+[design] iam: roles/viewer granted to user:auditor@example.com; its scope is unbounded, use roles/browser or a bounded predefined role
+[design] network: firewall tx01-allow-postgres-world exposes database port 5432 to 0.0.0.0/0; databases are reached over private connectivity

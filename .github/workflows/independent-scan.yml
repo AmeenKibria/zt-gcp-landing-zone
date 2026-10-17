@@ -1,0 +1,90 @@
+name: Independent scan (KICS)
+
+# An independent check on the same configurations. KICS is an open-source
+# infrastructure-as-code scanner maintained by Checkmarx, with its own query
+# set written by other people. Its findings are compared with the gate's
+# denials condition by condition; agreement corroborates the gate, and
+# disagreement in either direction is reported, not resolved here.
+#
+# KICS reads the Terraform source; the gate reads the plan. The scan never fails
+# the build on findings, only on an engine error.
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  KICS_IMAGE: checkmarx/kics:v2.2.0
+
+jobs:
+  kics:
+    name: kics scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pull KICS and record the exact image
+        run: |
+          docker pull "$KICS_IMAGE"
+          docker image inspect --format '{{index .RepoDigests 0}}' "$KICS_IMAGE" | tee kics-image.txt
+          docker run --rm "$KICS_IMAGE" version
+
+      - name: Scan every scenario directory
+        run: |
+          mkdir -p kics-results
+          chmod 777 kics-results
+          docker run --rm \
+            -v "$PWD/scenarios:/scan:ro" \
+            -v "$PWD/kics-results:/out" \
+            "$KICS_IMAGE" scan \
+              -p /scan \
+              -t Terraform \
+              --report-formats json,sarif \
+              -o /out \
+              --ignore-on-exit results \
+              --no-progress
+
+      - name: Summarise findings per scenario
+        run: |
+          python3 - <<'PY' | tee -a "$GITHUB_STEP_SUMMARY"
+          import csv, json, re, sys
+          data = json.load(open("kics-results/results.json"))
+          rows = []
+          for q in data.get("queries", []):
+              for f in q.get("files", []):
+                  m = re.search(r"scan/([^/]+)/", f.get("file_name", ""))
+                  rows.append({
+                      "scenario": m.group(1) if m else f.get("file_name", ""),
+                      "severity": q.get("severity", ""),
+                      "query": q.get("query_name", ""),
+                      "query_id": q.get("query_id", ""),
+                      "resource": f"{f.get('resource_type', '')}.{f.get('resource_name', '')}",
+                      "line": f.get("line", ""),
+                  })
+          rows.sort(key=lambda r: (r["scenario"], r["severity"], r["query"], r["resource"]))
+          with open("kics-results/findings.csv", "w", newline="") as fh:
+              w = csv.DictWriter(fh, fieldnames=list(rows[0].keys()) if rows else ["scenario"])
+              w.writeheader()
+              w.writerows(rows)
+          print("## KICS findings\n")
+          print(f"Engine version and image: see the log. Total findings: **{len(rows)}**.\n")
+          print("| Scenario | Severity | Query | Resource | Line |")
+          print("|---|---|---|---|---|")
+          for r in rows:
+              print(f"| {r['scenario']} | {r['severity']} | {r['query']} | {r['resource']} | {r['line']} |")
+          PY
+          echo "----- findings.csv -----"
+          cat kics-results/findings.csv
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kics-results
+          path: |
+            kics-image.txt
+            kics-results/
+          retention-days: 30
