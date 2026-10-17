@@ -55,8 +55,9 @@ exact denials for each directory are in its `expected.txt`.
 Terraform 1.9.8 and Open Policy Agent v1.21.1 are pinned in the workflows, and
 the OPA binary is checked against its published SHA-256 before use. The Google
 provider is constrained to `~> 6.0`; the version installed is printed by
-`terraform init`. KICS runs from the image `checkmarx/kics:v2.2.0`, and the job
-records the image digest.
+`terraform init`. KICS runs from the Docker Hub image `checkmarx/kics:latest`,
+because the newest release (v2.2.0) has no version tag there; the job records
+the image digest and the engine version, and those identify what ran.
 
 ## One-time setup
 
@@ -94,6 +95,13 @@ records the image digest.
      --project zt-lz-sandbox
    ```
 
+   `iamcredentials.googleapis.com` matters more than it looks. Most
+   configurations plan without a single API call, so a missing API goes
+   unnoticed. The compliant twins tc-02, tc-03 and tc-06 read the project
+   number through a data source, which makes the pipeline exchange its
+   federated token for real; without that API their plans fail with
+   `SERVICE_DISABLED`.
+
 5. Open a pull request. Fifteen policy-check jobs run: the seven non-compliant
    configurations fail with their denials, and the eight compliant ones pass.
    The unit tests and the independent scan run alongside.
@@ -111,10 +119,11 @@ anything, so it needs no more than enough read access to resolve the project and
 plan a set of creates.
 
 `roles/viewer` would have been the obvious choice and it is the wrong one: the
-policy set denies every basic role, `roles/viewer` included (CIS 1.6). Granting
-it here would give the artifact a role its own gate forbids, and the only reason
-that never surfaces is that the bootstrap is applied by hand and never passes
-through the gate.
+policy set refuses `roles/viewer` to anyone, under a design rule, because its
+scope widens on its own as Google adds services. Granting it here would give the
+artifact a role its own gate forbids, and the only reason that would never
+surface is that the bootstrap is applied by hand and never passes through the
+gate.
 
 ## Terraform state
 

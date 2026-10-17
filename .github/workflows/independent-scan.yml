@@ -16,8 +16,12 @@ on:
 permissions:
   contents: read
 
+# The version tag of the newest KICS release (v2.2.0) is not published on
+# Docker Hub, so the job runs the image tagged latest and records what it
+# actually ran: the image digest and the version the engine reports. The digest
+# is the pin; results refer to it.
 env:
-  KICS_IMAGE: checkmarx/kics:v2.2.0
+  KICS_IMAGE: checkmarx/kics:latest
 
 jobs:
   kics:
